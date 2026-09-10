@@ -5,3 +5,5 @@ out
 !.env.local.example
 *.log
 .DS_Store
+*.tsbuildinfo
+.vercel

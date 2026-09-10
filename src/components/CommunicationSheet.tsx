@@ -39,11 +39,6 @@ export function CommunicationSheet({
         next.grade || ""
       }，${next.skills.length > 0 ? `擅长${next.skills.join("、")}。` : ""}希望能进一步聊聊，看看是否合适一起做这件事。`,
     );
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
   }, [post.title]);
 
   function handleSend() {

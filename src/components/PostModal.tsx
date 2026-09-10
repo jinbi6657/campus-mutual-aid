@@ -34,10 +34,13 @@ export function PostModal({
   onClose: () => void;
 }) {
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const scrollAnchorRef = useRef(0);
   const [mounted, setMounted] = useState(false);
   const [entered, setEntered] = useState(false);
   const [closing, setClosing] = useState(false);
-  const [cardStyle, setCardStyle] = useState<React.CSSProperties | undefined>();
+  const [cardStyle, setCardStyle] = useState<React.CSSProperties>({
+    opacity: 0,
+  });
   const [reportOpen, setReportOpen] = useState(false);
   const [reported, setReported] = useState(false);
   const [commOpen, setCommOpen] = useState(false);
@@ -45,11 +48,11 @@ export function PostModal({
 
   useEffect(() => {
     setMounted(true);
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    // 方案 B：浮层打开期间不再锁定页面滚动，网页竖向滚动条保持可见、可用。
+    // 记录打开瞬间的滚动位置，关闭时用它把卡片飞回"卡片现在所在的位置"。
+    scrollAnchorRef.current = window.scrollY;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => {
-      document.body.style.overflow = originalOverflow;
       window.clearInterval(timer);
     };
   }, []);
@@ -67,10 +70,12 @@ export function PostModal({
     const target = element.getBoundingClientRect();
     const dx = originRect.left - target.left;
     const dy = originRect.top - target.top;
-    const scale = Math.min(originRect.width / target.width, 1);
+    const scaleX = originRect.width / target.width;
+    const scaleY = originRect.height / target.height;
 
     setCardStyle({
-      transform: `translate(${dx}px, ${dy}px) scale(${scale})`,
+      transform: `translate(${dx}px, ${dy}px) scale(${scaleX}, ${scaleY})`,
+      transformOrigin: "top left",
       opacity: 0.3,
       transition: "none",
     });
@@ -78,7 +83,8 @@ export function PostModal({
     const raf = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         setCardStyle({
-          transform: "translate(0, 0) scale(1)",
+          transform: "translate(0, 0) scale(1, 1)",
+          transformOrigin: "top left",
           opacity: 1,
           transition:
             "transform 380ms cubic-bezier(0.22,1,0.36,1), opacity 320ms ease",
@@ -105,13 +111,17 @@ export function PostModal({
     const element = cardRef.current;
     if (element && originRect) {
       const target = element.getBoundingClientRect();
+      // 背景可滚，originRect 是打开时的视口坐标，需要按滚动位移换算到当前位置。
+      const scrolledBy = window.scrollY - scrollAnchorRef.current;
       const dx = originRect.left - target.left;
-      const dy = originRect.top - target.top;
-      const scale = Math.min(originRect.width / target.width, 1);
+      const dy = originRect.top - scrolledBy - target.top;
+      const scaleX = originRect.width / target.width;
+      const scaleY = originRect.height / target.height;
       setClosing(true);
       setCardStyle({
-        transform: `translate(${dx}px, ${dy}px) scale(${scale})`,
-        opacity: 0.2,
+        transform: `translate(${dx}px, ${dy}px) scale(${scaleX}, ${scaleY})`,
+        transformOrigin: "top left",
+        opacity: 0.15,
         transition:
           "transform 340ms cubic-bezier(0.4,0,0.2,1), opacity 300ms ease",
       });
