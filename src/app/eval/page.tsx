@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { runEvalInBrowser } from "@/lib/eval-client";
 import type { EvalReport } from "@/lib/eval-runner";
 
 const kindLabel: Record<string, string> = {
@@ -17,24 +18,28 @@ export default function EvalPage() {
   const [report, setReport] = useState<EvalReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
 
   async function run(limit: number) {
     setLoading(true);
-    setMessage(`正在跑 ${limit} 题对比，请稍等（AI 调用需要一点时间）…`);
     setReport(null);
+    setProgress({ done: 0, total: Math.min(limit, 50) });
+    setMessage(
+      `正在跑 ${limit} 题对比：规则基线本地计算，AI 部分逐题调用接口，大约需要 1–2 分钟。`,
+    );
     try {
-      const response = await fetch("/api/eval/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ limit }),
+      const data = await runEvalInBrowser(limit, {
+        onProgress: ({ done, total }) => setProgress({ done, total }),
       });
-      const data = (await response.json()) as EvalReport;
       setReport(data);
       setMessage(`完成：共 ${data.totalQuestions} 题。`);
     } catch (error) {
       setMessage(`运行失败：${String(error)}`);
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   }
 
@@ -126,6 +131,28 @@ export default function EvalPage() {
           <p className="mt-3 rounded-xl bg-white/80 px-3 py-2 text-xs text-[#5c6b62]">
             {message}
           </p>
+        ) : null}
+        {loading && progress ? (
+          <div className="mt-3">
+            <div className="flex items-center justify-between text-[11px] text-[#7b8a80]">
+              <span>AI 匹配进度</span>
+              <span>
+                {progress.done} / {progress.total}
+              </span>
+            </div>
+            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[#eef2ea]">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 transition-all duration-300"
+                style={{
+                  width: `${
+                    progress.total === 0
+                      ? 0
+                      : Math.round((progress.done / progress.total) * 100)
+                  }%`,
+                }}
+              />
+            </div>
+          </div>
         ) : null}
       </div>
 

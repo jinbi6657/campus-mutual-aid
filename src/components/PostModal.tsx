@@ -293,7 +293,7 @@ export function PostModal({
               立即沟通
             </button>
             <Link
-              href={`/post/${post.id}`}
+              href={`/post?id=${post.id}`}
               className="flex-1 rounded-xl border border-[#e3e9df] py-3 text-center text-sm font-medium text-[#5c6b62] transition hover:bg-white active:scale-[0.98]"
             >
               查看详情 →

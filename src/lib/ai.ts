@@ -18,16 +18,51 @@ export interface AiCallResult {
 const INPUT_PRICE_PER_MILLION = 2;
 const OUTPUT_PRICE_PER_MILLION = 8;
 
+// 运行环境注入：Cloudflare Workers 里没有 process.env，由接口层把密钥传进来。
+let injectedApiKey: string | undefined;
+let injectedBaseUrl: string | undefined;
+
+export function configureAiFromEnv(source?: {
+  DEEPSEEK_API_KEY?: string;
+  DEEPSEEK_BASE_URL?: string;
+}): void {
+  if (source?.DEEPSEEK_API_KEY) {
+    injectedApiKey = source.DEEPSEEK_API_KEY;
+  }
+  if (source?.DEEPSEEK_BASE_URL) {
+    injectedBaseUrl = source.DEEPSEEK_BASE_URL;
+  }
+}
+
+function readProcessEnv(name: string): string | undefined {
+  if (typeof process === "undefined" || !process.env) {
+    return undefined;
+  }
+  return process.env[name];
+}
+
+function resolveApiKey(): string | undefined {
+  return injectedApiKey ?? readProcessEnv("DEEPSEEK_API_KEY");
+}
+
+function resolveBaseUrl(): string {
+  return (
+    injectedBaseUrl ??
+    readProcessEnv("DEEPSEEK_BASE_URL") ??
+    "https://api.deepseek.com"
+  );
+}
+
 export function hasAiKey(): boolean {
-  return Boolean(process.env.DEEPSEEK_API_KEY);
+  return Boolean(resolveApiKey());
 }
 
 export async function callDeepSeek(
   messages: AiMessage[],
   options?: { json?: boolean; temperature?: number; maxTokens?: number },
 ): Promise<AiCallResult> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  const baseUrl = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
+  const apiKey = resolveApiKey();
+  const baseUrl = resolveBaseUrl();
 
   if (!apiKey || apiKey.includes("粘贴")) {
     return {

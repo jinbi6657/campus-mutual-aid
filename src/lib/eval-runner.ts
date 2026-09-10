@@ -73,7 +73,7 @@ function isHardMatch(
   return false;
 }
 
-function scoreQuestion(
+export function scoreQuestion(
   question: EvalQuestion,
   ids: string[],
   reasons: string[],
@@ -115,7 +115,7 @@ function scoreQuestion(
   return { score: fabricated ? 1 : 2, suspected: fabricated };
 }
 
-function summarize(items: EvalItemResult[]): EngineSummary {
+export function summarize(items: EvalItemResult[]): EngineSummary {
   const total = items.length || 1;
   return {
     total: items.length,

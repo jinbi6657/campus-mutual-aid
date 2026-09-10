@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { CommunicationSheet } from "@/components/CommunicationSheet";
 import { getTagDisplay } from "@/lib/categories";
 import { addReport, loadPosts } from "@/lib/store";
@@ -11,6 +11,8 @@ import { findUser, loadSession } from "@/lib/auth";
 import { formatDeadline } from "@/lib/time";
 import type { Post } from "@/lib/types";
 
+// 帖子详情用查询参数 ?id=xxx 而不是动态路由 /post/[id]。
+// 原因：静态导出（Cloudflare Pages）无法为运行时才存在的 id 预渲染页面。
 const reportReasons = [
   "虚假信息 / 诈骗",
   "色情低俗",
@@ -19,9 +21,9 @@ const reportReasons = [
   "其他不当内容",
 ];
 
-export default function PostDetailPage() {
-  const params = useParams<{ id: string }>();
-  const id = params?.id;
+function PostDetail() {
+  const searchParams = useSearchParams();
+  const id = searchParams.get("id") ?? "";
   const [post, setPost] = useState<Post | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [commOpen, setCommOpen] = useState(false);
@@ -30,6 +32,7 @@ export default function PostDetailPage() {
 
   useEffect(() => {
     if (!id) {
+      setLoaded(true);
       return;
     }
     const found = loadPosts().find((item) => item.id === id) ?? null;
@@ -189,5 +192,19 @@ export default function PostDetailPage() {
         </div>
       ) : null}
     </main>
+  );
+}
+
+export default function PostDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto w-full max-w-3xl pt-10">
+          <div className="card-soft h-40 animate-pulse rounded-3xl" />
+        </main>
+      }
+    >
+      <PostDetail />
+    </Suspense>
   );
 }

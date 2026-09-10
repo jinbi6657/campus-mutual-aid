@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     candidates?: Candidate[];
   };
   const query = (body.query ?? "").trim();
-  const candidates = (body.candidates ?? []).slice(0, 40);
+  const candidates = (body.candidates ?? []).slice(0, 200);
 
   if (!query || candidates.length === 0) {
     return NextResponse.json({ fallback: true, error: "缺少查询或候选" });
