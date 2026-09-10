@@ -1,0 +1,224 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f4f7f1;
+  --foreground: #1f2933;
+  --card: #fffdfa;
+  --muted: #5c6b62;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+/* 桌面端整体放大，解决"显示偏小、偏挤" */
+@media (min-width: 1280px) {
+  html {
+    font-size: 17px;
+  }
+}
+
+@media (min-width: 1536px) {
+  html {
+    font-size: 17.5px;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--background);
+  background-image:
+    radial-gradient(1200px 600px at 8% -10%, rgba(214, 238, 220, 0.6), transparent 60%),
+    radial-gradient(900px 520px at 100% 0%, rgba(247, 244, 234, 0.85), transparent 55%);
+  background-attachment: fixed;
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 毛玻璃：顶部导航、底部导航、广场大屏 */
+.glass {
+  background: rgba(255, 253, 250, 0.72);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+}
+
+.glass-dark {
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+/* 浮起来的卡片：暖白底 + 双层柔和阴影 */
+.card-soft {
+  background: rgba(255, 253, 250, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow:
+    0 1px 2px rgba(31, 41, 51, 0.04),
+    0 8px 24px rgba(31, 41, 51, 0.08);
+}
+
+.card-hover {
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+
+@media (hover: hover) {
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 2px 4px rgba(31, 41, 51, 0.05),
+      0 14px 30px rgba(31, 41, 51, 0.12);
+  }
+}
+
+/* 触屏横向滑动时，只接管横向手势 */
+.carousel-track {
+  touch-action: pan-y;
+}
+
+/* 隐藏横向滚动条（轨道 + 滑块 + 箭头），改用按住拖动滚动 */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes carousel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes float-soft {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes modal-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 260ms ease-out both;
+}
+
+.carousel-item {
+  animation: carousel-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-float-soft {
+  animation: float-soft 6s ease-in-out infinite;
+}
+
+.modal-pop {
+  animation: modal-pop 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* 尊重系统的"减少动态效果"设置 */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up,
+  .carousel-item,
+  .animate-float-soft,
+  .modal-pop,
+  .card-hover {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* 登录页：信息卡片河流 */
+.river-card {
+  position: absolute;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+
+@keyframes river-lr {
+  from {
+    transform: translate3d(-30vw, 0, 0) rotate(var(--rot, 0deg));
+  }
+  to {
+    transform: translate3d(130vw, var(--drift, 0px), 0)
+      rotate(calc(-1 * var(--rot, 0deg)));
+  }
+}
+
+@keyframes river-rl {
+  from {
+    transform: translate3d(130vw, 0, 0) rotate(var(--rot, 0deg));
+  }
+  to {
+    transform: translate3d(-30vw, var(--drift, 0px), 0)
+      rotate(calc(-1 * var(--rot, 0deg)));
+  }
+}
+
+@keyframes river-tb {
+  from {
+    transform: translate3d(0, -30vh, 0) rotate(var(--rot, 0deg));
+  }
+  to {
+    transform: translate3d(var(--drift, 0px), 130vh, 0)
+      rotate(calc(-1 * var(--rot, 0deg)));
+  }
+}
+
+@keyframes river-bt {
+  from {
+    transform: translate3d(0, 130vh, 0) rotate(var(--rot, 0deg));
+  }
+  to {
+    transform: translate3d(var(--drift, 0px), -30vh, 0)
+      rotate(calc(-1 * var(--rot, 0deg)));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .river-card {
+    animation: none !important;
+  }
+}
