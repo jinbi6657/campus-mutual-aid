@@ -32,6 +32,11 @@ const AUTH_GUARD_SCRIPT = `
     }
     if (!valid) {
       window.location.replace("/login");
+      return;
+    }
+    var adminOnly = path === "/eval" || path.indexOf("/admin") === 0;
+    if (adminOnly && session.role !== "admin") {
+      window.location.replace("/");
     }
   } catch (error) {
     window.location.replace("/login");

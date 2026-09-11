@@ -57,7 +57,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         router.replace(user.role === "admin" ? "/admin" : "/");
         return;
       }
-      if (pathname.startsWith("/admin") && user.role !== "admin") {
+      // 管理端和评测中心都只允许管理员账号访问
+      const adminOnly =
+        pathname.startsWith("/admin") || pathname === "/eval";
+      if (adminOnly && user.role !== "admin") {
         router.replace("/");
         return;
       }
