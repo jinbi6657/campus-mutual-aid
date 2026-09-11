@@ -52,12 +52,18 @@ async function mapWithConcurrency<T, R>(
 export async function runEvalInBrowser(
   limit = 50,
   options?: {
+    /** 从第几题开始（0 起算），用于一次只跑一两题时逐题推进 */
+    start?: number;
     onProgress?: (progress: EvalProgress) => void;
     signal?: AbortSignal;
   },
 ): Promise<EvalReport> {
-  const count = Math.max(1, Math.min(limit, evalQuestions.length));
-  const questions = evalQuestions.slice(0, count);
+  const start = Math.max(
+    0,
+    Math.min(options?.start ?? 0, Math.max(0, evalQuestions.length - 1)),
+  );
+  const count = Math.max(1, Math.min(limit, evalQuestions.length - start));
+  const questions = evalQuestions.slice(start, start + count);
   const postsById = new Map(mockPosts.map((post) => [post.id, post]));
   const candidates: Candidate[] = mockPosts.map((post) => ({
     id: post.id,

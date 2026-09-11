@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { runEvalInBrowser } from "@/lib/eval-client";
 import type { EvalReport } from "@/lib/eval-runner";
+import { evalQuestions } from "@/lib/eval-set";
 
 const kindLabel: Record<string, string> = {
   normal: "常规需求",
@@ -21,16 +22,23 @@ export default function EvalPage() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(
     null,
   );
+  const [startNo, setStartNo] = useState(1);
 
   async function run(limit: number) {
+    const start = Math.max(
+      0,
+      Math.min(startNo - 1, Math.max(0, evalQuestions.length - 1)),
+    );
+    const end = Math.min(start + limit, evalQuestions.length);
     setLoading(true);
     setReport(null);
-    setProgress({ done: 0, total: Math.min(limit, 50) });
+    setProgress({ done: 0, total: end - start });
     setMessage(
-      `正在跑 ${limit} 题对比：规则基线本地计算，AI 部分逐题调用接口，大约需要 1–2 分钟。`,
+      `正在跑第 ${start + 1}–${end} 题对比：规则基线本地计算，AI 部分逐题调用接口。`,
     );
     try {
       const data = await runEvalInBrowser(limit, {
+        start,
         onProgress: ({ done, total }) => setProgress({ done, total }),
       });
       setReport(data);
@@ -91,23 +99,50 @@ export default function EvalPage() {
         <p className="mt-1 text-xs leading-relaxed text-[#7b8a80]">
           用 50 题测试集对比「规则匹配基线」和「AI 匹配（DeepSeek）」，输出命中率、幻觉率、兜底率、延迟和成本。
         </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => run(10)}
-            className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-medium text-white transition active:scale-95 disabled:opacity-50"
-          >
-            快速跑 10 题
-          </button>
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => run(50)}
-            className="rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-500 px-4 py-2.5 text-xs font-semibold text-white shadow-md shadow-indigo-200 transition active:scale-95 disabled:opacity-50"
-          >
-            完整跑 50 题
-          </button>
+        <p className="mt-1.5 text-[11px] leading-relaxed text-[#9aa7a0]">
+          为省模型成本，默认一次只跑 1–3 题，指定起始题号可以逐题推进；下面的报告只包含本次跑到的题目。
+        </p>
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-[11px] text-[#7b8a80]">
+            起始题号（1–{evalQuestions.length}）
+            <input
+              type="number"
+              min={1}
+              max={evalQuestions.length}
+              value={startNo}
+              disabled={loading}
+              onChange={(event) => setStartNo(Number(event.target.value) || 1)}
+              className="w-24 rounded-xl border border-[#e3e9df] bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-indigo-300"
+            />
+          </label>
+          <div className="flex flex-wrap gap-2 pb-0.5">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => run(1)}
+              className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-medium text-white transition active:scale-95 disabled:opacity-50"
+            >
+              跑 1 题（约 ¥0.003）
+            </button>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => run(3)}
+              className="rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-500 px-4 py-2.5 text-xs font-semibold text-white shadow-md shadow-indigo-200 transition active:scale-95 disabled:opacity-50"
+            >
+              跑 3 题（约 ¥0.008）
+            </button>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => run(evalQuestions.length)}
+              className="rounded-xl border border-[#e3e9df] px-4 py-2.5 text-xs text-[#7b8a80] transition hover:bg-white active:scale-95 disabled:opacity-50"
+            >
+              跑全部 50 题（约 ¥0.13）
+            </button>
+          </div>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2">
           {report ? (
             <>
               <button
