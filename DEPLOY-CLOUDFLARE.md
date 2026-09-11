@@ -23,9 +23,13 @@ Cloudflare Pages 只能托管**静态站点**，所以这个项目在 Cloudflare
   - `GET /` → 200
   - `GET /login` → 200
   - `GET /post?id=xxx` → 200
-  - `POST /api/ai/parse` → 200，真实调用 DeepSeek 成功
-  - `POST /api/ai/match` → 200，返回真实推荐结果
-  - `POST /api/ai/draft` → 200，返回真实生成文案
+- `POST /api/ai/parse` → 200，真实调用 DeepSeek 成功
+- `POST /api/ai/match` → 200，返回真实推荐结果
+- `POST /api/ai/draft` → 200，返回真实生成文案
+- `POST /api/ai/clarify` → 需求澄清（信息不足时返回最多 2 个可点选问题）
+- `POST /api/ai/coach` → 需求质量教练（诊断 + 改写）
+
+> 说明：五个接口都以同一路径提供两份实现——`src/app/api/**`（本地开发）与 `functions/api/**`（Cloudflare 线上），前端不需要区分。
 
 ## 三、部署步骤
 
