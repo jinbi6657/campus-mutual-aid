@@ -17,6 +17,11 @@ export type AnalyticsEventName =
   | "topic_follow"
   | "ai_call"
   | "ai_fallback"
+  | "ai_clarify"
+  | "ai_clarify_submit"
+  | "ai_coach"
+  | "ai_coach_apply"
+  | "post_stale_alert"
   | "promotion_impression"
   | "promotion_click";
 

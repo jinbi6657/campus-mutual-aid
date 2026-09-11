@@ -23,6 +23,14 @@ const durationPresets = [
   { id: "30d", label: "30 天", minutes: 43200, hint: "最长展示上限" },
 ];
 
+interface CoachData {
+  score: number;
+  issues: string[];
+  suggestions: string[];
+  improvedTitle?: string;
+  improvedDescription?: string;
+}
+
 function formatDateTime(iso: string): string {
   const date = new Date(iso);
   const hours = String(date.getHours()).padStart(2, "0");
@@ -46,6 +54,8 @@ export default function PublishPage() {
   const [published, setPublished] = useState<"approved" | "pending" | null>(
     null,
   );
+  const [coach, setCoach] = useState<CoachData | null>(null);
+  const [coachLoading, setCoachLoading] = useState(false);
 
   function selectGroup(id: string) {
     setGroupId(id);
@@ -136,6 +146,67 @@ export default function PublishPage() {
       setMessage("网络异常，已使用规则版文案草稿。");
       track("ai_fallback", { feature: "draft", reason: String(error) });
     }
+  }
+
+  /** 需求质量体检：诊断这条需求为什么可能没人回应，并给出可直接替换的改写 */
+  async function runCoach() {
+    if (!title.trim() && !description.trim()) {
+      setMessage("先写点标题或描述，AI 才有东西可看。");
+      return;
+    }
+    const skillList = skills.split(/[，,、\s]+/).filter(Boolean);
+    setCoachLoading(true);
+    setMessage("AI 正在检查这条需求…");
+    try {
+      const response = await fetch("/api/ai/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          description,
+          skills: skillList,
+          grade,
+          categoryLabel: display.label,
+        }),
+      });
+      const data = await response.json();
+      if (!data.fallback && data.coach) {
+        setCoach(data.coach as CoachData);
+        setMessage(
+          `AI 体检完成：质量分 ${data.coach.score}/100（${
+            data.metrics?.latencyMs ?? 0
+          } ms，约 ¥${(data.metrics?.costYuan ?? 0).toFixed(4)}）。`,
+        );
+        track("ai_coach", {
+          score: data.coach.score,
+          latencyMs: data.metrics?.latencyMs,
+          costYuan: data.metrics?.costYuan,
+        });
+        return;
+      }
+      setMessage(`AI 暂不可用（${data.error ?? "未知原因"}），可以先按自己的写法发布。`);
+      track("ai_fallback", { feature: "coach", reason: data.error ?? "unknown" });
+    } catch (error) {
+      setMessage("网络异常，AI 体检没跑成。");
+      track("ai_fallback", { feature: "coach", reason: String(error) });
+    } finally {
+      setCoachLoading(false);
+    }
+  }
+
+  function applyCoach() {
+    if (!coach) {
+      return;
+    }
+    if (coach.improvedTitle) {
+      setTitle(coach.improvedTitle);
+    }
+    if (coach.improvedDescription) {
+      setDescription(coach.improvedDescription);
+    }
+    track("ai_coach_apply", { score: coach.score });
+    setMessage("已采用 AI 改写版本，你可以继续修改后发布。");
+    setCoach(null);
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -392,14 +463,105 @@ export default function PublishPage() {
             />
           </label>
 
-          <button
-            type="button"
-            onClick={generateDraft}
-            className="w-full rounded-xl border border-indigo-200 bg-indigo-50/80 py-2.5 text-sm font-medium text-indigo-600 transition duration-200 hover:bg-indigo-100 active:scale-[0.98]"
-          >
-            ✨ 一键生成招募文案草稿
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={generateDraft}
+              className="flex-1 rounded-xl border border-indigo-200 bg-indigo-50/80 py-2.5 text-sm font-medium text-indigo-600 transition duration-200 hover:bg-indigo-100 active:scale-[0.98]"
+            >
+              ✨ 一键生成招募文案草稿
+            </button>
+            <button
+              type="button"
+              onClick={runCoach}
+              disabled={coachLoading}
+              className="flex-1 rounded-xl border border-[#e3e9df] bg-white/80 py-2.5 text-sm font-medium text-[#5c6b62] transition duration-200 hover:bg-white active:scale-[0.98] disabled:opacity-60"
+            >
+              {coachLoading ? "AI 体检中…" : "🔍 让 AI 检查这条需求"}
+            </button>
+          </div>
         </div>
+
+        {coach ? (
+          <div className="card-soft mt-4 rounded-3xl p-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-900">
+                🔍 AI 需求体检
+              </h2>
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                  coach.score >= 80
+                    ? "bg-emerald-50 text-emerald-600"
+                    : coach.score >= 60
+                      ? "bg-amber-50 text-amber-700"
+                      : "bg-rose-50 text-rose-600"
+                }`}
+              >
+                质量分 {coach.score}
+              </span>
+            </div>
+
+            {coach.issues.length > 0 ? (
+              <div className="mt-3">
+                <p className="text-[11px] font-medium text-[#7b8a80]">
+                  可能没人回的原因
+                </p>
+                <ul className="mt-1.5 space-y-1 text-[12px] leading-relaxed text-[#5c6b62]">
+                  {coach.issues.map((issue) => (
+                    <li key={issue}>· {issue}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {coach.suggestions.length > 0 ? (
+              <div className="mt-3">
+                <p className="text-[11px] font-medium text-[#7b8a80]">
+                  AI 建议
+                </p>
+                <ul className="mt-1.5 space-y-1 text-[12px] leading-relaxed text-[#5c6b62]">
+                  {coach.suggestions.map((item) => (
+                    <li key={item}>· {item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {coach.improvedTitle || coach.improvedDescription ? (
+              <div className="mt-3 rounded-2xl bg-[#f7f8f4] p-3.5">
+                <p className="text-[11px] font-medium text-[#7b8a80]">
+                  AI 改写版本
+                </p>
+                {coach.improvedTitle ? (
+                  <p className="mt-1.5 text-[13px] font-medium text-slate-800">
+                    {coach.improvedTitle}
+                  </p>
+                ) : null}
+                {coach.improvedDescription ? (
+                  <p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-[#5c6b62]">
+                    {coach.improvedDescription}
+                  </p>
+                ) : null}
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={applyCoach}
+                    className="rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition active:scale-95"
+                  >
+                    一键采用改写
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCoach(null)}
+                    className="rounded-xl border border-[#e3e9df] px-4 py-2.5 text-xs text-[#7b8a80] transition active:scale-95"
+                  >
+                    不用了
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="card-soft space-y-4 rounded-3xl p-5">
           <label className="block">

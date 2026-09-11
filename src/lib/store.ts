@@ -128,6 +128,26 @@ export function updatePostModeration(
   writeArray(POSTS_KEY, saved);
 }
 
+/** 用 AI 改写后的版本更新自己发布的帖子内容（只允许改标题和描述） */
+export function updatePostContent(
+  postId: string,
+  patch: { title?: string; description?: string },
+): Post | null {
+  const saved = loadLocalPosts();
+  const index = saved.findIndex((post) => post.id === postId);
+  if (index === -1) {
+    return null;
+  }
+  const updated: Post = {
+    ...saved[index],
+    ...(patch.title ? { title: patch.title } : {}),
+    ...(patch.description ? { description: patch.description } : {}),
+  };
+  saved[index] = updated;
+  writeArray(POSTS_KEY, saved);
+  return updated;
+}
+
 export function addApplication(
   application: Omit<Application, "id" | "createdAt" | "status">,
 ): Application {

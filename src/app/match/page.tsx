@@ -6,7 +6,8 @@ import { PostModal } from "@/components/PostModal";
 import { track } from "@/lib/analytics";
 import { getTagDisplay } from "@/lib/categories";
 import { matchPosts } from "@/lib/match";
-import { loadPosts } from "@/lib/store";
+import { getSoftTraits, softFieldsForCandidate } from "@/lib/soft-traits";
+import { loadPosts, loadProfile } from "@/lib/store";
 import type { MatchResult, Post } from "@/lib/types";
 
 const examples = [
@@ -20,6 +21,17 @@ interface AiMetrics {
   promptTokens: number;
   completionTokens: number;
   costYuan: number;
+}
+
+interface ClarifyQuestion {
+  id: string;
+  question: string;
+  options: string[];
+}
+
+interface ClarifyState {
+  reason?: string;
+  questions: ClarifyQuestion[];
 }
 
 export default function MatchPage() {
@@ -41,12 +53,87 @@ export default function MatchPage() {
     post: Post;
     rect: DOMRect;
   } | null>(null);
+  const [clarify, setClarify] = useState<ClarifyState | null>(null);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [baseQuery, setBaseQuery] = useState("");
+  const [clarifyLoading, setClarifyLoading] = useState(false);
 
   async function handleMatch() {
     const query = input.trim();
     if (!query) {
       return;
     }
+    if (engine === "baseline") {
+      const posts = loadPosts();
+      const local = matchPosts(query, posts);
+      setResults(local);
+      setEngineUsed("baseline");
+      setClarify(null);
+      track("ai_call", { engine: "baseline", resultCount: local.length });
+      return;
+    }
+    await askClarify(query);
+  }
+
+  /** 先判断需求够不够具体：不够就先追问，而不是直接返回空结果 */
+  async function askClarify(query: string) {
+    setClarify(null);
+    setAnswers({});
+    setClarifyLoading(true);
+    setResults(null);
+    setNote("");
+    setParsed(null);
+    setMetrics(null);
+    setCandidateInfo(null);
+
+    try {
+      const response = await fetch("/api/ai/clarify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: query }),
+      });
+      const data = await response.json();
+      if (
+        !data.fallback &&
+        data.needClarify &&
+        Array.isArray(data.questions) &&
+        data.questions.length > 0
+      ) {
+        setBaseQuery(query);
+        setClarify({
+          reason: data.reason as string | undefined,
+          questions: data.questions as ClarifyQuestion[],
+        });
+        track("ai_clarify", { questionCount: data.questions.length });
+        setClarifyLoading(false);
+        return;
+      }
+    } catch {
+      // 追问失败就直接进入匹配，不阻塞主流程
+    }
+    setClarifyLoading(false);
+    await runAiMatch(query);
+  }
+
+  function submitClarify() {
+    const parts = (clarify?.questions ?? [])
+      .map((question) => {
+        const answer = answers[question.id];
+        if (!answer || answer.startsWith("其他")) {
+          return null;
+        }
+        return `${question.question} ${answer}`;
+      })
+      .filter(Boolean) as string[];
+    const enriched =
+      parts.length > 0 ? `${baseQuery}（补充：${parts.join("；")}）` : baseQuery;
+    setClarify(null);
+    setAnswers({});
+    setInput(enriched);
+    void runAiMatch(enriched);
+  }
+
+  async function runAiMatch(query: string) {
     setLoading(true);
     setNote("");
     setParsed(null);
@@ -54,15 +141,6 @@ export default function MatchPage() {
     setCandidateInfo(null);
 
     const posts = loadPosts();
-
-    if (engine === "baseline") {
-      const local = matchPosts(query, posts);
-      setResults(local);
-      setEngineUsed("baseline");
-      track("ai_call", { engine: "baseline", resultCount: local.length });
-      setLoading(false);
-      return;
-    }
 
     try {
       const parseResponse = await fetch("/api/ai/parse", {
@@ -86,13 +164,25 @@ export default function MatchPage() {
       tagLabel: getTagDisplay(post).label,
       authorMajor: post.authorMajor,
       authorGrade: post.authorGrade,
+      ...softFieldsForCandidate(post.id),
     }));
+
+    // 把用户自己的作息和组队偏好一起交给模型，用于避开"技能合适但时间对不上"的人
+    const profile = loadProfile();
+    const selfNote = [
+      profile?.mbti ? `MBTI ${profile.mbti}` : "",
+      profile?.schedule ?? "",
+      profile?.teamStyle ?? "",
+    ]
+      .filter(Boolean)
+      .join("、");
+    const queryForAi = selfNote ? `${query}（我的情况：${selfNote}）` : query;
 
     try {
       const response = await fetch("/api/ai/match", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, candidates }),
+        body: JSON.stringify({ query: queryForAi, candidates }),
       });
       const data = await response.json();
 
@@ -115,6 +205,9 @@ export default function MatchPage() {
             postId: string;
             reason: string;
             score: number;
+            common?: string;
+            complement?: string;
+            opener?: string;
           }[]
         ).map((item) => {
           const post = posts.find((entry) => entry.id === item.postId);
@@ -125,6 +218,9 @@ export default function MatchPage() {
             grade: post?.authorGrade ?? "",
             category: post?.type ?? "custom",
             reason: item.reason,
+            common: item.common,
+            complement: item.complement,
+            opener: item.opener,
             source: (post?.skills ?? []).slice(0, 3),
             score: item.score ?? 0,
           };
@@ -232,11 +328,82 @@ export default function MatchPage() {
         <button
           type="button"
           onClick={handleMatch}
-          disabled={loading}
+          disabled={loading || clarifyLoading}
           className="mt-5 w-full rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-500 py-3 text-[15px] font-semibold text-white shadow-md shadow-indigo-200 transition duration-200 hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-60"
         >
-          {loading ? "匹配中…" : "开始匹配"}
+          {clarifyLoading ? "正在分析需求…" : loading ? "匹配中…" : "开始匹配"}
         </button>
+
+        {clarifyLoading ? (
+          <p className="mt-3 text-[11px] text-[#9aa7a0]">
+            AI 先判断这句话够不够具体，不够的话会先问你两个问题。
+          </p>
+        ) : null}
+
+        {clarify ? (
+          <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
+            <p className="text-xs font-semibold text-indigo-700">
+              🤔 AI 觉得信息还不够，先确认两件事
+            </p>
+            {clarify.reason ? (
+              <p className="mt-1 text-[11px] leading-relaxed text-indigo-600/80">
+                {clarify.reason}
+              </p>
+            ) : null}
+            <div className="mt-3 space-y-3">
+              {clarify.questions.map((question) => (
+                <div key={question.id}>
+                  <p className="text-[12px] font-medium text-slate-800">
+                    {question.question}
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {question.options.map((option) => {
+                      const active = answers[question.id] === option;
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() =>
+                            setAnswers((prev) => ({
+                              ...prev,
+                              [question.id]: option,
+                            }))
+                          }
+                          className={`rounded-full px-3 py-1.5 text-[11px] transition duration-200 active:scale-95 ${
+                            active
+                              ? "bg-indigo-600 text-white shadow-sm"
+                              : "bg-white text-[#5c6b62] shadow-sm"
+                          }`}
+                        >
+                          {option}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={submitClarify}
+                className="rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition active:scale-95"
+              >
+                补充好了，开始匹配
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setClarify(null);
+                  void runAiMatch(baseQuery);
+                }}
+                className="rounded-xl border border-indigo-200 px-4 py-2.5 text-xs text-indigo-600 transition active:scale-95"
+              >
+                跳过，直接匹配
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {parsed ? (
           <div className="mt-3 flex flex-wrap gap-1.5">
@@ -306,6 +473,7 @@ export default function MatchPage() {
                 const post = allPosts.find(
                   (entry) => entry.id === result.postId,
                 );
+                const traits = getSoftTraits(result.postId);
                 return (
                   <div key={result.postId} className="space-y-2">
                     {post ? (
@@ -330,6 +498,53 @@ export default function MatchPage() {
                       <p className="mt-1.5 text-[12px] leading-relaxed text-[#5c6b62]">
                         {result.reason}
                       </p>
+                      {result.common || result.complement || result.opener ? (
+                        <div className="mt-2 space-y-1.5 rounded-xl bg-[#f7f8f4] p-2.5 text-[11px] leading-relaxed text-[#5c6b62]">
+                          {result.common ? (
+                            <p>
+                              <span className="font-medium text-slate-800">
+                                共同点
+                              </span>
+                              　{result.common}
+                            </p>
+                          ) : null}
+                          {result.complement ? (
+                            <p>
+                              <span className="font-medium text-slate-800">
+                                互补点
+                              </span>
+                              　{result.complement}
+                            </p>
+                          ) : null}
+                          {result.opener ? (
+                            <p>
+                              <span className="font-medium text-indigo-600">
+                                开场建议
+                              </span>
+                              　{result.opener}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {traits.mbti || traits.schedule || traits.style ? (
+                        <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-[#7b8a80]">
+                          {traits.mbti ? (
+                            <span className="rounded-md bg-white/70 px-2 py-1">
+                              MBTI {traits.mbti}
+                            </span>
+                          ) : null}
+                          {traits.schedule ? (
+                            <span className="rounded-md bg-white/70 px-2 py-1">
+                              {traits.schedule}
+                            </span>
+                          ) : null}
+                          {traits.style ? (
+                            <span className="rounded-md bg-white/70 px-2 py-1">
+                              {traits.style}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
                       {result.source.length > 0 ? (
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {result.source.map((item) => (

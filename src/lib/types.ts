@@ -35,6 +35,10 @@ export interface MatchResult {
   reason: string;
   source: string[];
   score: number;
+  /** 三段式解释：共同点 / 互补点 / 怎么开口 */
+  common?: string;
+  complement?: string;
+  opener?: string;
 }
 
 export interface Profile {
@@ -44,6 +48,9 @@ export interface Profile {
   gender: string;
   age: string;
   mbti: string;
+  /** 作息偏好与组队偏好：参与软性匹配，AI 会用来避开"技能合适但时间对不上"的人 */
+  schedule?: string;
+  teamStyle?: string;
   mood: string;
   signature: string;
   skills: string[];

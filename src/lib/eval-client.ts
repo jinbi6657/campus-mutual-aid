@@ -9,6 +9,7 @@ import {
 import { evalQuestions } from "./eval-set";
 import { matchPosts } from "./match";
 import { mockPosts } from "./mock-data";
+import { softFieldsForCandidate } from "./soft-traits";
 
 export interface EvalProgress {
   done: number;
@@ -73,6 +74,7 @@ export async function runEvalInBrowser(
     tagLabel: getTagDisplay(post).label,
     authorMajor: post.authorMajor,
     authorGrade: post.authorGrade,
+    ...softFieldsForCandidate(post.id),
   }));
 
   const baselineResults: EvalItemResult[] = questions.map((question) => {

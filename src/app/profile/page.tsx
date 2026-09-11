@@ -16,7 +16,9 @@ import {
   renewPost,
   saveProfile,
   updateApplicationStatus,
+  updatePostContent,
 } from "@/lib/store";
+import { track } from "@/lib/analytics";
 import { deadlineBadge, renewalState } from "@/lib/time";
 import type { Application, Post, Profile } from "@/lib/types";
 import type { Promotion } from "@/lib/types";
@@ -28,12 +30,24 @@ const emptyProfile: Profile = {
   gender: "",
   age: "",
   mbti: "",
+  schedule: "",
+  teamStyle: "",
   mood: "😀",
   signature: "",
   skills: [],
 };
 
 const moodOptions = ["😀", "😌", "😴", "😭", "🔥", "🌧️", "🌈", "🐱"];
+const scheduleOptions = ["早八型", "白天型", "夜猫子", "灵活"];
+const teamStyleOptions = ["长期稳定", "短期搭伙", "任务导向", "随缘"];
+
+interface CoachData {
+  score: number;
+  issues: string[];
+  suggestions: string[];
+  improvedTitle?: string;
+  improvedDescription?: string;
+}
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -46,6 +60,9 @@ export default function ProfilePage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [myApplications, setMyApplications] = useState<Application[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [coachTarget, setCoachTarget] = useState<string | null>(null);
+  const [coachResult, setCoachResult] = useState<CoachData | null>(null);
+  const [coachLoading, setCoachLoading] = useState(false);
 
   useEffect(() => {
     const session = loadSession();
@@ -94,6 +111,63 @@ export default function ProfilePage() {
     }
     setMyPosts(loadLocalPosts());
     setMessage("续期成功，展示时间已顺延。");
+  }
+
+  /** 长期无人响应的帖子：让 AI 诊断问题并给可直接替换的改写 */
+  async function requestPostCoach(post: Post) {
+    setCoachTarget(post.id);
+    setCoachResult(null);
+    setCoachLoading(true);
+    track("post_stale_alert", { postId: post.id });
+    try {
+      const response = await fetch("/api/ai/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: post.title,
+          description: post.description,
+          skills: post.skills,
+          grade: post.gradePreference ?? "",
+          categoryLabel: getTagDisplay(post).label,
+        }),
+      });
+      const data = await response.json();
+      if (!data.fallback && data.coach) {
+        setCoachResult(data.coach as CoachData);
+        track("ai_coach", {
+          source: "stale_post",
+          score: data.coach.score,
+          costYuan: data.metrics?.costYuan,
+        });
+      } else {
+        setMessage(`AI 暂不可用（${data.error ?? "未知原因"}）。`);
+        track("ai_fallback", { feature: "coach", reason: data.error ?? "unknown" });
+      }
+    } catch (error) {
+      setMessage("网络异常，AI 改写没跑成。");
+      track("ai_fallback", { feature: "coach", reason: String(error) });
+    } finally {
+      setCoachLoading(false);
+    }
+  }
+
+  function applyPostCoach(postId: string) {
+    if (!coachResult) {
+      return;
+    }
+    const updated = updatePostContent(postId, {
+      title: coachResult.improvedTitle,
+      description: coachResult.improvedDescription,
+    });
+    if (updated) {
+      setMyPosts(loadLocalPosts());
+      setMessage("已采用 AI 改写版本，帖子内容已更新。");
+      track("ai_coach_apply", { source: "stale_post", postId });
+    } else {
+      setMessage("改写没能保存，请重试。");
+    }
+    setCoachTarget(null);
+    setCoachResult(null);
   }
 
   const myPostIds = new Set(myPosts.map((post) => post.id));
@@ -183,6 +257,15 @@ export default function ProfilePage() {
               const tag = getTagDisplay(post);
               const badge = deadlineBadge(post.displayEndAt, now);
               const renew = renewalState(post, now);
+              const applicationCount = applications.filter(
+                (item) => item.postId === post.id,
+              ).length;
+              const hoursSinceCreated =
+                (now - new Date(post.createdAt).getTime()) / 3_600_000;
+              const stale =
+                post.status === "open" &&
+                hoursSinceCreated >= 48 &&
+                applicationCount === 0;
               const moderationLabel =
                 post.moderationStatus === "pending"
                   ? "审核中"
@@ -226,6 +309,68 @@ export default function ProfilePage() {
                         ? `：${post.moderationReasons.join("；")}`
                         : ""}
                     </p>
+                  ) : null}
+                  {stale ? (
+                    <div className="mt-2 rounded-xl bg-amber-50 px-3 py-2.5">
+                      <p className="text-[11px] leading-relaxed text-amber-700">
+                        ⏰ 发布超过 48 小时还没人联系。多数情况不是没人想做，
+                        而是这条写得让人不知道怎么回。
+                      </p>
+                      {coachTarget === post.id && coachResult ? (
+                        <div className="mt-2 rounded-xl bg-white/85 p-2.5">
+                          <p className="text-[11px] font-semibold text-amber-700">
+                            质量分 {coachResult.score}/100
+                          </p>
+                          {coachResult.issues.length > 0 ? (
+                            <ul className="mt-1 space-y-0.5 text-[11px] leading-relaxed text-[#5c6b62]">
+                              {coachResult.issues.map((issue) => (
+                                <li key={issue}>· {issue}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          {coachResult.improvedTitle ? (
+                            <p className="mt-2 text-[12px] font-medium text-slate-800">
+                              {coachResult.improvedTitle}
+                            </p>
+                          ) : null}
+                          {coachResult.improvedDescription ? (
+                            <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-[#5c6b62]">
+                              {coachResult.improvedDescription}
+                            </p>
+                          ) : null}
+                          <div className="mt-2 flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => applyPostCoach(post.id)}
+                              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[11px] font-semibold text-white transition active:scale-95"
+                            >
+                              一键采用
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCoachTarget(null);
+                                setCoachResult(null);
+                              }}
+                              className="rounded-lg border border-[#e3e9df] px-3 py-1.5 text-[11px] text-[#7b8a80] transition active:scale-95"
+                            >
+                              不用了
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={coachLoading && coachTarget === post.id}
+                          onClick={() => requestPostCoach(post)}
+                          className="mt-2 rounded-lg bg-amber-500 px-3 py-1.5 text-[11px] font-medium text-white transition active:scale-95 disabled:opacity-60"
+                        >
+                          {coachLoading && coachTarget === post.id
+                            ? "AI 分析中…"
+                            : "让 AI 帮我改写"}
+                        </button>
+                      )}
+                    </div>
                   ) : null}
                   <div className="mt-2 flex items-center justify-between">
                     <span className="text-[11px] text-[#9aa7a0]">
@@ -525,6 +670,42 @@ export default function ProfilePage() {
             className="mt-1.5 w-full rounded-xl border border-[#e8ece5] bg-[#fffdfa] px-3.5 py-2.5 text-sm outline-none focus:border-indigo-400"
           />
         </label>
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="text-xs font-medium text-[#5c6b62]">作息</span>
+            <select
+              value={profile.schedule ?? ""}
+              onChange={(event) => update("schedule", event.target.value)}
+              className="mt-1.5 w-full rounded-xl border border-[#e8ece5] bg-[#fffdfa] px-3.5 py-2.5 text-sm outline-none focus:border-indigo-400"
+            >
+              <option value="">不填</option>
+              {scheduleOptions.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-xs font-medium text-[#5c6b62]">组队偏好</span>
+            <select
+              value={profile.teamStyle ?? ""}
+              onChange={(event) => update("teamStyle", event.target.value)}
+              className="mt-1.5 w-full rounded-xl border border-[#e8ece5] bg-[#fffdfa] px-3.5 py-2.5 text-sm outline-none focus:border-indigo-400"
+            >
+              <option value="">不填</option>
+              {teamStyleOptions.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className="text-[11px] leading-relaxed text-[#9aa7a0]">
+          这两项是给 AI 匹配用的：技能都对但作息完全相反的人，AI 会主动帮你避开。
+        </p>
 
         <div>
           <span className="text-xs font-medium text-[#5c6b62]">今天的心情</span>
